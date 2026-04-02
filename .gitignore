@@ -2,3 +2,4 @@ node_modules/
 ref/
 dist/
 .env
+test/output/

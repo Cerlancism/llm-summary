@@ -32,7 +32,7 @@ async function generateDraft(
 ): Promise<{ draft: string; outputTokens: number | undefined; aborted: boolean }> {
   const result = await streamWithRepetitionGuard(client, {
     model,
-    temperature: 0.3,
+    temperature: 0,
     messages: [
       {
         role: "system",
@@ -42,10 +42,7 @@ async function generateDraft(
       },
       { role: "user", content: `Summarise the following text:\n\n${text}` },
     ],
-  });
-  if (result.aborted && verbose) {
-    console.log(`  ⚠ Draft aborted — repetition detected: "${result.repetitionPattern?.slice(0, 60)}…"`);
-  }
+  }, { verbose });
   return {
     draft: result.content.trim(),
     outputTokens: result.usage?.completion_tokens,
@@ -117,10 +114,10 @@ async function fitLength(
 
     const result = await streamWithRepetitionGuard(client, {
       model,
-      temperature: 0.3,
+      temperature: 0,
       max_tokens: tokenCap,
       messages,
-    });
+    }, { verbose });
 
     const fitted = result.content.trim();
     const fittedTokens = tokenCount(fitted);
@@ -129,7 +126,7 @@ async function fitLength(
     if (verbose) {
       console.log(
         `  Fit attempt ${attempt}: ${fittedTokens} tokens (gpt-tokenizer) / ${apiTokens ?? "?"} (api) | ` +
-        `cap: ${tokenCap}${result.aborted ? ` | ⚠ aborted (repetition: "${result.repetitionPattern?.slice(0, 40)}…")` : ""}`
+        `cap: ${tokenCap}${result.aborted ? ` | ⚠ aborted after ${result.retries} retries` : ""}`
       );
     }
 
