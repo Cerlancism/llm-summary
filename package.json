@@ -1,7 +1,7 @@
 {
   "name": "llm-summary",
   "version": "1.0.0",
-  "description": "Prototype LLM system to reliably summarise text within a target length range",
+  "description": "LLM system to reliably summarise text within a target length range",
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
