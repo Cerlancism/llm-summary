@@ -3,10 +3,16 @@
   "version": "1.0.0",
   "description": "Prototype LLM system to reliably summarise text within a target length range",
   "type": "module",
-  "main": "src/index.ts",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "files": ["dist/src"],
+  "bin": {
+    "llm-summary": "dist/cli/index.js"
+  },
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "tsx cli/index.ts",
     "build": "tsc",
+    "prepare": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -14,7 +20,8 @@
   "dependencies": {
     "dotenv": "^16.4.7",
     "gpt-tokenizer": "^3.4.0",
-    "openai": "^6.32.0"
+    "openai": "^6.32.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

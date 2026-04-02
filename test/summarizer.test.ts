@@ -17,7 +17,7 @@ challenges that the industry must address.
 `;
 
 const MEDIUM_TEXT = `
-The history of space exploration spans over six decades of human achievement. In 1957, the
+The history of space exploration spans decades of human achievement. In 1957, the
 Soviet Union launched Sputnik, the first artificial satellite, marking the beginning of the
 Space Age. This was followed by Yuri Gagarin's historic flight in 1961, making him the first
 human in space. The United States responded with the Apollo program, culminating in Neil
@@ -35,13 +35,12 @@ others like Rocket Lab and Virgin Galactic, are making space more accessible tha
 
 Looking ahead, NASA's Artemis program aims to return humans to the Moon, while Mars remains
 the ultimate goal for human exploration. China and India have also emerged as major space powers,
-with successful lunar and Mars missions. The coming decades promise even more ambitious ventures,
-including potential asteroid mining and the establishment of permanent lunar bases.
+with successful lunar and Mars missions. Future plans include potential asteroid mining and the establishment of permanent lunar bases.
 `;
 
 const LONG_TEXT = `
 Climate change represents one of the most pressing challenges facing humanity in the 21st century.
-The Earth's average temperature has risen approximately 1.1 degrees Celsius above pre-industrial
+The Earth's average temperature has risen more than 1 degree Celsius above pre-industrial
 levels, driven primarily by the burning of fossil fuels and deforestation. This warming has
 triggered a cascade of environmental changes that affect every corner of the globe.
 
@@ -68,7 +67,7 @@ threatens coral reefs and shellfish populations, with cascading effects through 
 The impacts on biodiversity are severe and accelerating. Species are shifting their ranges poleward
 and to higher elevations as temperatures rise. Coral reefs, which support roughly 25% of all marine
 species, have experienced repeated mass bleaching events. The Great Barrier Reef alone has suffered
-five mass bleaching events since 2016. On land, changing seasons disrupt the timing of ecological
+multiple mass bleaching events since 2016. On land, changing seasons disrupt the timing of ecological
 events—flowers bloom before pollinators emerge, migratory birds arrive to find food sources depleted.
 
 Agriculture faces both opportunities and threats from climate change. While some northern regions may
@@ -94,7 +93,7 @@ investment funds are channelling growing sums toward sustainable development.
 Individual actions, while important, cannot substitute for systemic change. Policy frameworks that
 set emissions reduction targets, phase out fossil fuel subsidies, protect forests, and incentivise
 clean technology adoption are essential. International cooperation remains crucial, as climate change
-respects no borders. The decisions made in this decade will largely determine whether humanity can
+respects no borders. The decisions made in the coming years will largely determine whether humanity can
 limit warming to manageable levels or face increasingly catastrophic consequences.
 `;
 
@@ -109,20 +108,21 @@ function createClient(): OpenAI {
 }
 
 const cases = [
-  { label: "short",      text: SHORT_TEXT,  min: 30,  max: 60  },
-  { label: "medium",     text: MEDIUM_TEXT, min: 80,  max: 120 },
-  { label: "long",       text: LONG_TEXT,   min: 100, max: 200 },
-  { label: "long→short", text: LONG_TEXT,   min: 20,  max: 40  },
+  { label: "short",        text: SHORT_TEXT,  min: 30,  max: 60  },
+  { label: "short-expand", text: SHORT_TEXT,  min: 100, max: 150 },
+  { label: "medium",       text: MEDIUM_TEXT, min: 80,  max: 120 },
+  { label: "long",         text: LONG_TEXT,   min: 100, max: 200 },
+  { label: "long-shrink",  text: LONG_TEXT,   min: 30,  max: 60  },
 ];
 
-describe("summarise — integration", () => {
+describe("summarise - integration", () => {
   const client = createClient();
 
   for (const { label, text, min, max } of cases) {
     it(`[${label}] summarises to ${min}–${max} tokens`, async () => {
       const inputTokens = encode(text).length;
       const result = await summarise(client, text, min, max, { verbose: true });
-      console.log(`  [${label}] input: ${inputTokens} → target: ${min}–${max} → output: ${result.tokens}, ${result.attempts} attempts`);
+      console.log(`  [${label}] input: ${inputTokens} → target: ${min}–${max} → output: ${result.tokens}, ${result.attempts} attempts, ${result.usage.input} in + ${result.usage.output} out = ${result.usage.total} total, ${(result.durationMs / 1000).toFixed(1)}s, ${result.outputTokensPerSecond.toFixed(1)} tokens/s`);
 
       const log = [
         `Label: ${label}`,
@@ -131,6 +131,9 @@ describe("summarise — integration", () => {
         `Output tokens: ${result.tokens}`,
         `Within range: ${result.withinRange}`,
         `Attempts: ${result.attempts}`,
+        `API usage: ${result.usage.input} input + ${result.usage.output} output = ${result.usage.total} total`,
+        `Duration: ${(result.durationMs / 1000).toFixed(1)}s`,
+        `Output rate: ${result.outputTokensPerSecond.toFixed(1)} tokens/s`,
         "",
         result.summary,
       ].join("\n");
@@ -142,6 +145,41 @@ describe("summarise — integration", () => {
       expect(result.tokens).toBeLessThanOrEqual(max);
     }, 120_000);
   }
+
+  it("[long-shrink-budget] summarises with context budget and 10 attempts", async () => {
+    const min = 10, max = 30;
+    const maxFitAttempts = 10;
+    const contextBudget = 1500;
+    const inputTokens = encode(LONG_TEXT).length;
+    const result = await summarise(client, LONG_TEXT, min, max, {
+      verbose: true,
+      maxFitAttempts,
+      contextBudget,
+    });
+    console.log(`  [long-shrink-budget] input: ${inputTokens} → target: ${min}–${max} → output: ${result.tokens}, ${result.attempts} attempts, ${result.usage.input} in + ${result.usage.output} out = ${result.usage.total} total, ${(result.durationMs / 1000).toFixed(1)}s, ${result.outputTokensPerSecond.toFixed(1)} tokens/s`);
+
+    const log = [
+      `Label: long-shrink-budget`,
+      `Input tokens: ${inputTokens}`,
+      `Target: ${min}–${max} tokens`,
+      `Max attempts: ${maxFitAttempts}`,
+      `Context budget: ${contextBudget}`,
+      `Output tokens: ${result.tokens}`,
+      `Within range: ${result.withinRange}`,
+      `Attempts: ${result.attempts}`,
+      `API usage: ${result.usage.input} input + ${result.usage.output} output = ${result.usage.total} total`,
+      `Duration: ${(result.durationMs / 1000).toFixed(1)}s`,
+      `Output rate: ${result.outputTokensPerSecond.toFixed(1)} tokens/s`,
+      "",
+      result.summary,
+    ].join("\n");
+    fs.writeFileSync(path.join(OUTPUT_DIR, "long-short-budget.txt"), log);
+
+    expect(result.summary.length).toBeGreaterThan(0);
+    expect(result.withinRange).toBe(true);
+    expect(result.tokens).toBeGreaterThanOrEqual(min);
+    expect(result.tokens).toBeLessThanOrEqual(max);
+  }, 300_000);
 });
 
 describe("token counting consistency", () => {

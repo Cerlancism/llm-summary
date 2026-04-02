@@ -1,5 +1,12 @@
 import OpenAI from "openai";
-import type { ChatCompletionStreamParams } from "openai/lib/ChatCompletionStream.js";
+import {
+  streamChat,
+  type AbortReason,
+  type ChatCompletionStreamParams,
+  type StreamResult,
+} from "./openai-helpers.js";
+
+export type { AbortReason };
 
 export interface RepetitionDetectorOptions {
   /** Shortest pattern length to watch for (chars). Default: 10 */
@@ -30,12 +37,9 @@ export interface StreamGuardOptions extends RepetitionDetectorOptions {
   verbose?: boolean;
 }
 
-export interface StreamGuardResult {
-  content: string;
-  aborted: boolean;
+export interface StreamGuardResult extends StreamResult {
   /** The repeated pattern that triggered the abort, if any. */
   repetitionPattern?: string;
-  usage?: OpenAI.CompletionUsage;
   /** How many retries were attempted (0 = first try succeeded). */
   retries: number;
 }
@@ -72,48 +76,6 @@ export function detectRepetition(
 }
 
 /**
- * Run a single streaming attempt, aborting on repetition.
- */
-async function runStream(
-  client: OpenAI,
-  params: ChatCompletionStreamParams,
-  detectorOpts: Required<RepetitionDetectorOptions>
-): Promise<StreamGuardResult> {
-  const { minPatternLength, maxPatternLength, minRepeats, warmupChars } = detectorOpts;
-
-  const stream = client.chat.completions.stream({ ...params });
-
-  let buffer = "";
-  let aborted = false;
-  let repetitionPattern: string | undefined;
-
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content ?? "";
-    buffer += delta;
-
-    if (buffer.length < warmupChars) continue;
-
-    const pattern = detectRepetition(buffer, minPatternLength, maxPatternLength, minRepeats);
-    if (pattern) {
-      repetitionPattern = pattern;
-      aborted = true;
-      stream.abort();
-      break;
-    }
-  }
-
-  const finalMessage = aborted ? null : await stream.finalChatCompletion().catch(() => null);
-
-  return {
-    content: buffer,
-    aborted,
-    repetitionPattern,
-    usage: finalMessage?.usage ?? undefined,
-    retries: 0,
-  };
-}
-
-/**
  * Stream a chat completion with repetition detection and automatic retry.
  *
  * On each retry, escalates temperature, frequency_penalty, and presence_penalty
@@ -130,12 +92,10 @@ export async function streamWithRepetitionGuard(
   const freqStep = options.escalation?.frequencyPenaltyStep ?? 0.3;
   const presStep = options.escalation?.presencePenaltyStep ?? 0.2;
 
-  const detector: Required<RepetitionDetectorOptions> = {
-    minPatternLength: options.minPatternLength ?? 10,
-    maxPatternLength: options.maxPatternLength ?? 1000,
-    minRepeats: options.minRepeats ?? 10,
-    warmupChars: options.warmupChars ?? 100,
-  };
+  const minLen = options.minPatternLength ?? 10;
+  const maxLen = options.maxPatternLength ?? 1000;
+  const minRepeats = options.minRepeats ?? 10;
+  const warmup = options.warmupChars ?? 100;
 
   const baseTemp = (params.temperature as number | undefined) ?? 0;
   const baseFreq = (params.frequency_penalty as number | undefined) ?? 0;
@@ -156,19 +116,43 @@ export async function streamWithRepetitionGuard(
       );
     }
 
-    const result = await runStream(client, escalatedParams, detector);
+    let repetitionPattern: string | undefined;
 
-    if (!result.aborted) {
-      return { ...result, retries: retry };
+    const result = await streamChat(client, escalatedParams, (buffer) => {
+      if (buffer.length < warmup) return;
+      const pattern = detectRepetition(buffer, minLen, maxLen, minRepeats);
+      if (pattern) {
+        repetitionPattern = pattern;
+        return true; // abort
+      }
+    });
+
+    const guardResult: StreamGuardResult = {
+      ...result,
+      repetitionPattern,
+      retries: retry,
+    };
+
+    if (!guardResult.aborted) {
+      return guardResult;
     }
 
     if (verbose) {
-      console.log(`  ⚠ Repetition detected (retry ${retry}): "${result.repetitionPattern?.slice(0, 50)}…"`);
+      const reason = guardResult.abortReason === "length_limit"
+        ? "length limit reached"
+        : `repetition: "${repetitionPattern?.slice(0, 50)}…"`;
+      console.log(`  ⚠ Aborted (retry ${retry}): ${reason}`);
+    }
+
+    // Length limit errors won't be fixed by escalating penalties — return
+    // immediately and let the caller handle it (e.g. the fit loop retries).
+    if (guardResult.abortReason === "length_limit") {
+      return guardResult;
     }
 
     // Last retry still aborted — return what we have.
     if (retry === maxRetries) {
-      return { ...result, retries: retry };
+      return guardResult;
     }
   }
 
