@@ -13,6 +13,9 @@ export interface SummariseOptions {
    *  the system prompt, original text, and draft on the first attempt —
    *  only trims attempt history). Default: Infinity (no limit). */
   contextBudget?: number;
+  /** Domain-specific instructions appended to the system prompt in both
+   *  draft and fit phases (e.g. language, style, or format constraints). */
+  instructions?: string;
 }
 
 export interface TokenUsage {
@@ -63,17 +66,23 @@ async function generateDraft(
   client: OpenAI,
   text: string,
   model: string,
-  verbose: boolean
+  verbose: boolean,
+  instructions?: string
 ): Promise<{ draft: string; promptTokens: number; completionTokens: number; aborted: boolean }> {
+  let systemContent =
+    "You are a summarisation assistant. Summarise the user's text accurately and completely. " +
+    "Preserve all key facts.";
+  if (instructions) {
+    systemContent += `\n\nAdditional instructions:\n${instructions}`;
+  }
+
   const result = await streamWithRepetitionGuard(client, {
     model,
     temperature: 0,
     messages: [
       {
         role: "system",
-        content:
-          "You are a summarisation assistant. Summarise the user's text accurately and completely. " +
-          "Preserve all key facts.",
+        content: systemContent,
       },
       { role: "user", content: `Summarise the following text:\n\n${text}` },
     ],
@@ -108,7 +117,7 @@ async function fitLength(
   maxTokens: number,
   opts: Required<SummariseOptions>
 ): Promise<{ summary: string; tokens: number; attempts: number; inputTokens: number; outputTokens: number }> {
-  const { model, verbose, maxFitAttempts: maxAttempts, contextBudget } = opts;
+  const { model, verbose, maxFitAttempts: maxAttempts, contextBudget, instructions } = opts;
   // Hard cap above maxTokens: 2x buffer for JSON wrapper overhead + model variance.
   const maxTokenTarget = maxTokens * 2;
   const tokenCap = contextBudget < Infinity
@@ -120,14 +129,19 @@ async function fitLength(
   let inputTokens = 0;
   let outputTokens = 0;
 
+  let systemContent =
+    "You are a length-fitting assistant. You receive an original text, a summary draft, and " +
+    "must rewrite the summary to fall within a strict token count range. Tokens are measured " +
+    "by a BPE tokenizer (GPT-style). As a rough guide, 1 token ≈ 0.75 words or ~4 characters " +
+    "in English. You may refer to the original text for context but your output must be a " +
+    "standalone summary within the target token range.";
+  if (instructions) {
+    systemContent += `\n\nAdditional instructions (preserve these requirements when rewriting):\n${instructions}`;
+  }
+
   const systemMessage: OpenAI.Chat.ChatCompletionMessageParam = {
     role: "system",
-    content:
-      "You are a length-fitting assistant. You receive an original text, a summary draft, and " +
-      "must rewrite the summary to fall within a strict token count range. Tokens are measured " +
-      "by a BPE tokenizer (GPT-style). As a rough guide, 1 token ≈ 0.75 words or ~4 characters " +
-      "in English. You may refer to the original text for context but your output must be a " +
-      "standalone summary within the target token range.",
+    content: systemContent,
   };
 
   let currentText = draft;
@@ -266,7 +280,7 @@ export async function summarise(
 
   if (verbose) console.log("  Phase 1: generating draft…");
   const { draft, promptTokens: draftPrompt, completionTokens: draftCompletion } =
-    await generateDraft(client, text, model, verbose);
+    await generateDraft(client, text, model, verbose, options.instructions);
   const draftTokens = tokenCount(draft);
   if (verbose) {
     console.log(`  Draft: ${draftTokens} tokens (gpt-tokenizer)`);
@@ -283,7 +297,7 @@ export async function summarise(
     draft,
     minTokens,
     maxTokens,
-    { model, verbose, maxFitAttempts, contextBudget }
+    { model, verbose, maxFitAttempts, contextBudget, instructions: options.instructions ?? "" }
   );
 
   const usage: TokenUsage = {

@@ -56,6 +56,8 @@ const result = await summarise(client, text, 50, 80, {
   verbose: true,          // optional, logs progress
   maxFitAttempts: 5,      // optional, max fit iterations
   contextBudget: 4000,    // optional, max tokens for fit conversation history
+  instructions: "Write in Traditional Chinese. Preserve proper nouns in their original language.",
+                          // optional, domain-specific instructions for both phases
 });
 
 console.log(result.summary);    // the summary text
