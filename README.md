@@ -6,8 +6,8 @@ LLM-powered text summarisation that reliably fits within a target token range.
 
 The summariser uses a two-phase approach:
 
-1. **Draft** -- Generate a quality summary with no length pressure, letting the model focus entirely on content.
-2. **Fit** -- Iteratively rewrite the summary to land within the target token range, using attempt history and escalating temperature to converge.
+1. **Draft** - Generate a quality summary with no length pressure, letting the model focus entirely on content.
+2. **Fit** - Iteratively rewrite the summary to land within the target token range, using attempt history and escalating temperature to converge.
 
 A streaming repetition guard detects degenerate loops during generation and automatically retries with escalated parameters (temperature, frequency/presence penalty).
 
@@ -17,7 +17,7 @@ A streaming repetition guard detects degenerate loops during generation and auto
 npm install git+https://github.com/Cerlancism/llm-summary.git
 ```
 
-## Environment File for CLI
+## Environment file for CLI
 
 Copy `.env.example` to `.env` and configure your API key:
 
