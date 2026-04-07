@@ -11,11 +11,13 @@ The summariser uses a two-phase approach:
 
 A streaming repetition guard detects degenerate loops during generation and automatically retries with escalated parameters (temperature, frequency/presence penalty).
 
-## Install
+## Install from git
 
 ```bash
-npm install
+npm install git+https://github.com/Cerlancism/llm-summary.git
 ```
+
+## Environment File for CLI
 
 Copy `.env.example` to `.env` and configure your API key:
 
@@ -74,11 +76,6 @@ console.log(result.usage);      // { input, output, total } token usage
 - `streamWithRepetitionGuard` -- Streaming with automatic repetition detection and retry
 - `detectRepetition` -- Pattern repetition detector (useful standalone)
 
-## Install from git
-
-```bash
-npm install git+https://github.com/Cerlancism/llm-summary.git
-```
 
 ## Development
 
