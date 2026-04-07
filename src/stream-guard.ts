@@ -111,7 +111,7 @@ export async function streamWithRepetitionGuard(
 
     if (verbose && retry > 0) {
       console.log(
-        `  Stream retry ${retry}/${maxRetries} — temp: ${escalatedParams.temperature}, ` +
+        `[LLM-Summary] Stream retry ${retry}/${maxRetries} — temp: ${escalatedParams.temperature}, ` +
         `freq_penalty: ${escalatedParams.frequency_penalty}, pres_penalty: ${escalatedParams.presence_penalty}`
       );
     }
@@ -141,7 +141,7 @@ export async function streamWithRepetitionGuard(
       const reason = guardResult.abortReason === "length_limit"
         ? "length limit reached"
         : `repetition: "${repetitionPattern?.slice(0, 50)}…"`;
-      console.log(`  ⚠ Aborted (retry ${retry}): ${reason}`);
+      console.log(`[LLM-Summary] ⚠ Aborted (retry ${retry}): ${reason}`);
     }
 
     // Length limit errors won't be fixed by escalating penalties — return

@@ -50,8 +50,9 @@ async function runOnce(
   minTokens: number,
   maxTokens: number
 ): Promise<void> {
+  const model = process.env.OPENAI_MODEL;
   console.log(`Summarising to ${minTokens}–${maxTokens} tokens…\n`);
-  const result = await summarise(client, text, minTokens, maxTokens, { verbose: true });
+  const result = await summarise(client, text, minTokens, maxTokens, { ...(model && { model }), verbose: true });
   printResult(result, minTokens, maxTokens);
 }
 

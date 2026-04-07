@@ -48,6 +48,12 @@ const FitResponse = z.object({
   summary: z.string().describe("The rewritten summary fitted to the target token range"),
 });
 
+// ─── Defaults ────────────────────────────────────────────────────────────────
+
+export const DEFAULT_MODEL = "gpt-4o-mini";
+export const DEFAULT_MAX_FIT_ATTEMPTS = 5;
+export const DEFAULT_CONTEXT_BUDGET = Infinity;
+
 function parseSummary(json: string): string {
   try {
     const parsed = JSON.parse(json);
@@ -94,7 +100,7 @@ async function generateDraft(
   const completionTokens = result.usage?.completion_tokens ?? 0;
 
   if (verbose) {
-    console.log(`    usage: ${promptTokens} prompt + ${completionTokens} completion = ${promptTokens + completionTokens} total`);
+    console.log(`[LLM-Summary] usage: ${promptTokens} prompt + ${completionTokens} completion = ${promptTokens + completionTokens} total`);
   }
 
   return { draft: summary, promptTokens, completionTokens, aborted: result.aborted };
@@ -151,7 +157,7 @@ async function fitLength(
     const alreadyInRange = currentTokens >= minTokens && currentTokens <= maxTokens;
 
     if (alreadyInRange && attempt === 1) {
-      if (verbose) console.log(`  Fit phase skipped — draft already in range (${currentTokens} tokens)`);
+      if (verbose) console.log(`[LLM-Summary] Fit phase skipped — draft already in range (${currentTokens} tokens)`);
       return { summary: currentText, tokens: currentTokens, attempts: 0, inputTokens: 0, outputTokens: 0 };
     }
 
@@ -166,12 +172,12 @@ async function fitLength(
     const userContent =
       attempt === 1
         ? `Rewrite this summary to be between ${minTokens} and ${maxTokens} tokens ` +
-          `(aim for ~${midTokens} tokens). ` +
-          `The current draft is ${currentTokens} tokens — ${direction}. ${guidance}\n\n` +
-          `Original text:\n${originalText}\n\n` +
-          `Draft summary:\n${currentText}`
+        `(aim for ~${midTokens} tokens). ` +
+        `The current draft is ${currentTokens} tokens — ${direction}. ${guidance}\n\n` +
+        `Original text:\n${originalText}\n\n` +
+        `Draft summary:\n${currentText}`
         : `Still ${direction} (${currentTokens} tokens). Target: ${minTokens}–${maxTokens} tokens. ${guidance}\n` +
-          `Current summary:\n${currentText}`;
+        `Current summary:\n${currentText}`;
 
     // Build messages: system + trimmed history + current user message.
     // History is trimmed from the front (oldest first) to stay within contextBudget.
@@ -189,7 +195,9 @@ async function fitLength(
         const dropped2 = historyMessages.shift()!;
         historyTokens -= tokenCount(typeof dropped1.content === "string" ? dropped1.content : "");
         historyTokens -= tokenCount(typeof dropped2.content === "string" ? dropped2.content : "");
-        if (verbose) console.log(`    (trimmed oldest history pair to fit context budget)`);
+        if (verbose) {
+          console.log(`[LLM-Summary] (trimmed oldest history pair to fit context budget)`);
+        }
       }
     }
 
@@ -197,8 +205,8 @@ async function fitLength(
     const historyNote =
       history.length > 0
         ? `\nYour previous attempts and their token counts:\n` +
-          history.map((h, i) => `  Attempt ${i + 1}: ${h.tokens} tokens`).join("\n") +
-          "\nUse this to calibrate — aim for the middle of the target range.\n"
+        history.map((h, i) => `  Attempt ${i + 1}: ${h.tokens} tokens`).join("\n") +
+        "\nUse this to calibrate — aim for the middle of the target range.\n"
         : "";
     const fullUserContent = attempt > 1 && historyNote
       ? userContent.replace(`${guidance}\n`, `${guidance}\n${historyNote}`)
@@ -231,11 +239,11 @@ async function fitLength(
 
     if (verbose) {
       console.log(
-        `  Fit attempt ${attempt}: ${fittedTokens} tokens (gpt-tokenizer) / ${completionToks} (api) | ` +
+        `[LLM-Summary] Fit attempt ${attempt}: ${fittedTokens} tokens (gpt-tokenizer) / ${completionToks} (api) | ` +
         `temp: ${temperature} | cap: ${tokenCap}${result.aborted ? ` | ⚠ ${result.abortReason} after ${result.retries} retries` : ""}`
       );
-      console.log(`    usage: ${promptToks} prompt + ${completionToks} completion = ${attemptTotal} total`);
-      console.log(`    text: ${fitted}`);
+      console.log(`[LLM-Summary] usage: ${promptToks} prompt + ${completionToks} completion = ${attemptTotal} total`);
+      console.log(`[LLM-Summary] text: ${fitted}`);
     }
 
     history.push({ tokens: fittedTokens, text: fitted, userMsg: fullUserContent, assistantMsg: result.content });
@@ -273,24 +281,24 @@ export async function summarise(
   if (minTokens > maxTokens) throw new Error("minTokens must be <= maxTokens");
   if (minTokens < 1) throw new Error("minTokens must be >= 1");
 
-  const model = options.model ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+  const model = options.model ?? DEFAULT_MODEL;
   const verbose = options.verbose ?? false;
 
   const startTime = Date.now();
 
-  if (verbose) console.log("  Phase 1: generating draft…");
+  if (verbose) console.log("[LLM-Summary] Phase 1: generating draft…");
   const { draft, promptTokens: draftPrompt, completionTokens: draftCompletion } =
     await generateDraft(client, text, model, verbose, options.instructions);
   const draftTokens = tokenCount(draft);
   if (verbose) {
-    console.log(`  Draft: ${draftTokens} tokens (gpt-tokenizer)`);
-    console.log(`    text: ${draft}`);
+    console.log(`[LLM-Summary] Draft: ${draftTokens} tokens (gpt-tokenizer)`);
+    console.log(`[LLM-Summary] text: ${draft}`);
   }
 
-  const maxFitAttempts = options.maxFitAttempts ?? 5;
-  const contextBudget = options.contextBudget ?? Infinity;
+  const maxFitAttempts = options.maxFitAttempts ?? DEFAULT_MAX_FIT_ATTEMPTS;
+  const contextBudget = options.contextBudget ?? DEFAULT_CONTEXT_BUDGET;
 
-  if (verbose) console.log("  Phase 2: fitting to token range…");
+  if (verbose) console.log("[LLM-Summary] Phase 2: fitting to token range…");
   const { summary, tokens, attempts, inputTokens: fitInput, outputTokens: fitOutput } = await fitLength(
     client,
     text,
@@ -309,8 +317,8 @@ export async function summarise(
   const outputTokensPerSecond = durationMs > 0 ? (usage.output / durationMs) * 1000 : 0;
 
   if (verbose) {
-    console.log(`  Total usage: ${usage.input} input + ${usage.output} output = ${usage.total} total`);
-    console.log(`  Duration: ${(durationMs / 1000).toFixed(1)}s | Output rate: ${outputTokensPerSecond.toFixed(1)} tokens/s`);
+    console.log(`[LLM-Summary] Total usage: ${usage.input} input + ${usage.output} output = ${usage.total} total`);
+    console.log(`[LLM-Summary] Duration: ${(durationMs / 1000).toFixed(1)}s | Output rate: ${outputTokensPerSecond.toFixed(1)} tokens/s`);
   }
 
   const withinRange = tokens >= minTokens && tokens <= maxTokens;
